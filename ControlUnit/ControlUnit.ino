@@ -115,6 +115,8 @@ void setup() {
   lcd.clear();
 
   WiFi.mode(WIFI_STA);
+  WiFi.setChannel(1); // Must match sensor unit channel
+
   if (esp_now_init() != ESP_OK) {
     Serial.println("ESP-NOW init failed");
     lcd.print("ESP-NOW failed");
@@ -124,7 +126,7 @@ void setup() {
   esp_now_register_recv_cb(onDataRecv);
 
   esp_now_peer_info_t peerInfo = {};
-  peerInfo.channel = 0;
+  peerInfo.channel = 1;
   peerInfo.encrypt = false;
 
   // Add Sensor Unit

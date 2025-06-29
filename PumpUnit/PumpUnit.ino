@@ -1,7 +1,9 @@
 #include <WiFi.h>
 #include <esp_now.h>
 
-uint8_t controlMac[] = {0x3C, 0x8A, 0x1F, 0x5E, 0x6D, 0xC4};
+#define RELAY_PIN 25 // Choose a suitable GPIO (not used for boot)
+
+bool pumpIsOn = false;
 
 typedef struct {
   bool pumpOn;
@@ -11,45 +13,52 @@ typedef struct {
   bool pumpStatus;
 } PumpStatus;
 
-bool pumpIsOn = false;
+// === Send pump status back ===
+void sendStatus(const uint8_t *mac) {
+  PumpStatus status = {pumpIsOn};
+  esp_now_send(mac, (uint8_t *)&status, sizeof(status));
+}
 
-void onDataRecv(const esp_now_recv_info_t *recv_info, const uint8_t *incomingData, int len) {
+// === Receive pump commands ===
+void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *incomingData, int len) {
+  if (len != sizeof(PumpCommand)) return;
+
   PumpCommand cmd;
   memcpy(&cmd, incomingData, sizeof(cmd));
 
-  Serial.print("Pump Command received: ");
-  Serial.println(cmd.pumpOn ? "ON" : "OFF");
+  if (cmd.pumpOn) {
+    digitalWrite(RELAY_PIN, HIGH);  // LOW to turn ON (low-level trigger)
+    pumpIsOn = true;
+    Serial.println("Pump turned ON");
+  } else {
+    digitalWrite(RELAY_PIN, LOW); // HIGH to turn OFF
+    pumpIsOn = false;
+    Serial.println("Pump turned OFF");
+  }
 
-  pumpIsOn = cmd.pumpOn;
-
-  PumpStatus status = {pumpIsOn};
-  esp_now_send(controlMac, (uint8_t *)&status, sizeof(status));
+  sendStatus(info->src_addr);
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(1000);
+
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Start OFF (relay OFF)
+
   WiFi.mode(WIFI_STA);
+  WiFi.setChannel(1); // Match channel if needed
 
   if (esp_now_init() != ESP_OK) {
-    Serial.println("ESP-NOW init failed");
-    return;
+    Serial.println("ESP-NOW init failed!");
+    while (true);
   }
 
   esp_now_register_recv_cb(onDataRecv);
 
-  esp_now_peer_info_t peerInfo = {};
-  memcpy(peerInfo.peer_addr, controlMac, 6);
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
-
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    Serial.println("Failed to add Control Unit peer");
-    return;
-  }
+  Serial.println("Pump unit ready.");
 }
 
 void loop() {
-  Serial.print("Pump is ");
-  Serial.println(pumpIsOn ? "ON" : "OFF");
-  delay(3000);
+  // Nothing in loop
 }
